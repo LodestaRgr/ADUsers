@@ -620,7 +620,7 @@ $toggleAccountMenuItem.Add_Click({
 
         # Задаем вопрос пользователю
         $dialogResult = [System.Windows.Forms.MessageBox]::Show(
-            "Вы уверены, что хотите $(if ($selectedUser.Enabled) { 'ОТКЛЮЧИТЬ' } else { 'ВКЛЮЧИТЬ' }) учетную запись:`n $($selectedUser.Name) ?",
+            "Вы уверены, что хотите $(if ($selectedUser.Enabled) { 'ОТКЛЮЧИТЬ' } else { 'ВКЛЮЧИТЬ' }) учетную запись:`n$($selectedUser.Name) ?",
             "Подтверждение", 
             [System.Windows.Forms.MessageBoxButtons]::YesNo,
             [System.Windows.Forms.MessageBoxIcon]::Warning
