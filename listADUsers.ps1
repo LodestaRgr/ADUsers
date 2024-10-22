@@ -605,7 +605,7 @@ $contextMenu.Items.Add($separator) | Out-Null
 $toggleAccountMenuItem = New-Object System.Windows.Forms.ToolStripMenuItem
 $toggleAccountMenuItem.Text = "Добавить пользователя ..."
 $toggleAccountMenuItem.Add_Click({
-    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"\\bav.local\ss\scripts\private\addADUser.ps1`""
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"${PSScriptRoot}\addADUser.ps1`""
 })
 $contextMenu.Items.Add($toggleAccountMenuItem) | Out-Null
 
