@@ -1,11 +1,26 @@
 ﻿clear
-Add-Type -AssemblyName System.Windows.Forms
 $upn = "@bavaria-group.ru"
+
+#- Passwork - настройки --------------------------------------------------------------------------
+
+#$passwork_address = "https://passwork.bavaria-group.ru/api/v4"
+$passwork_address = "http://172.20.0.253/api/v4"
+$passwork_token = "9mEubTheqzrgLUpAAUGTiqViNDkuVfT7APjPKefgxPoGkbICGARFHo6UbJk6"
+$passwork_vault = "AD"          # Сейф для работы
+$passwork_disfold = "Уволенные" # Папка с отключенными пользователями
+
+. "${PSScriptRoot}\passwork_lib.ps1"
+#-------------------------------------------------------------------------------------------------
+
+Add-Type -AssemblyName System.Windows.Forms
+
 $font = New-Object System.Drawing.Font("Lucida Console", 10, [System.Drawing.FontStyle]::Regular)
 
 # Создаем форму
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Управление пользователями AD"
+# Установка системного значка
+$form.Icon = [System.Drawing.SystemIcons]::Shield
 $form.Size = New-Object System.Drawing.Size(700, 800)
 
 # Создаем ListBox для отображения пользователей
@@ -125,10 +140,45 @@ $changePasswordMenuItem.Add_Click({
             try {
                 # Смена пароля
                 Set-ADAccountPassword $selectedUser.SamAccountName -Reset -NewPassword (ConvertTo-SecureString -AsPlainText $newPassword -Force -Verbose) –PassThru
-                [System.Windows.Forms.MessageBox]::Show("Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль: $newPassword", "Пароль изменен")
+
+                #Работа с базой PassWork
+                Write-Host "`n-------------------------------------------------------------`n"
+                Write-Host "Passwork - Смена пароля:"
+
+                $passwork = [Passwork]::new($passwork_address)
+                $auth = $passwork.login($passwork_token)
+                if ($auth){
+                    $vault = $passwork.searchVault($passwork_vault)
+                        if ($vault -ne $null){
+                            Write-Host "Запрос: $($selectedUser.SamAccountName) $($selectedUser.Name)"
+                            $response = $passwork.searchPassword(
+                                @{
+                                    query = "$($selectedUser.SamAccountName) $($selectedUser.Name)"
+                                    vaultId = $vault.id
+                            })
+
+                            if ($response.Count -ge 1) {
+                                # Поиск нужного словаря
+                                $result = $response | Where-Object { 
+                                    $_.name -eq "$($selectedUser.Name)" -and $_.login -eq "$($selectedUser.SamAccountName)"
+                                }
+                                if ($result) {
+                                     $passwork.editPassword($result.id,
+                                        @{
+                                            cryptedPassword = "$newPassword"
+                                            tags = @("$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)")
+                                    })   
+                                }
+
+                            }
+                        }
+                    $passwork.logout()
+                }
 
                 #Сохранить в буфер обмена
                 Set-Clipboard -Value "Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль: $newPassword"
+
+                [System.Windows.Forms.MessageBox]::Show("Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль: $newPassword", "Пароль изменен")
 
                 Update-UserList
                 $passwordForm.Close()
@@ -177,7 +227,49 @@ $renameMenuItem.Add_Click({
                 $user = Get-ADUser -Identity $selectedUser.SamAccountName
                 Set-ADUser -Identity $user -SamAccountName $newLogin
                 Set-ADUser -Identity $user -UserPrincipalName $newLogin$upn
+                Set-ADUser -Identity $user -EmailAddress $newLogin$upn
 
+                #Работа с базой PassWork
+                Write-Host "`n-------------------------------------------------------------`n"
+                Write-Host "Passwork - Смена логина:"
+
+                $passwork = [Passwork]::new($passwork_address)
+                $auth = $passwork.login($passwork_token)
+                if ($auth){
+                    $vault = $passwork.searchVault($passwork_vault)
+                        if ($vault -ne $null){
+                            Write-Host "Запрос: $($selectedUser.SamAccountName) $($selectedUser.Name)"
+                            $response = $passwork.searchPassword(
+                                @{
+                                    query = "$($selectedUser.SamAccountName) $($selectedUser.Name)"
+                                    vaultId = $vault.id
+                            })
+
+                            if ($response.Count -ge 1) {
+                                # Поиск нужного словаря
+                                $result = $response | Where-Object { 
+                                    $_.name -eq "$($selectedUser.Name)" -and $_.login -eq "$($selectedUser.SamAccountName)"
+                                }
+                                if ($result) {
+                                     $passwork.editPassword($result.id,
+                                        @{
+                                            login = "$newLogin"
+                                            custom = @(
+                                                @{
+                                                    name  = "Почта"
+                                                    value = "$newLogin$upn"
+                                                    type  = "text"
+                                                }
+                                            )
+                                            tags = @("$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)")
+                                    })   
+                                }
+
+                            }
+                        }
+                    $passwork.logout()
+                }
+                
                 [System.Windows.Forms.MessageBox]::Show("Пользователь - $($selectedUser.SamAccountName)$upn`nпереименован - $newLogin$upn", "Сменен")
 
                 $newLoginForm.Close()
@@ -250,6 +342,41 @@ $renameMenuItem.Add_Click({
                     Rename-ADObject -NewName $newName
                 }
 
+                #Работа с базой PassWork
+                Write-Host "`n-------------------------------------------------------------`n"
+                Write-Host "Passwork - Переименование:"
+
+                $passwork = [Passwork]::new($passwork_address)
+                $auth = $passwork.login($passwork_token)
+                if ($auth){
+                    $vault = $passwork.searchVault($passwork_vault)
+                        if ($vault -ne $null){
+                            Write-Host "Запрос: $($selectedUser.SamAccountName) $($selectedUser.Name)"
+                            $response = $passwork.searchPassword(
+                                @{
+                                    query = "$($selectedUser.SamAccountName) $($selectedUser.Name)"
+                                    vaultId = $vault.id
+                            })
+
+                            if ($response.Count -ge 1) {
+
+                                # Поиск нужного словаря
+                                $result = $response | Where-Object { 
+                                    $_.name -eq "$($selectedUser.Name)" -and $_.login -eq "$($selectedUser.SamAccountName)"
+                                }
+
+                                if ($result) {
+                                     $passwork.editPassword($result.id,
+                                        @{
+                                            name = "$newName"
+                                            tags = @("$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)")
+                                    })   
+                                }
+
+                            }
+                        }
+                    $passwork.logout()
+                }
 
                 # Проверяем, содержит ли строка пробел
                 [System.Windows.Forms.MessageBox]::Show("Пользователь - $($selectedUser.Name)`nпереименован - $newName.", "Переименован")
@@ -490,20 +617,115 @@ $toggleAccountMenuItem.Add_Click({
     $selectedIndex = $listBox.SelectedIndex
     if ($selectedIndex -ge 0) {
         $selectedUser = $global:sortedUsers[$selectedIndex]
-        if ($selectedUser.Enabled) {
-            Disable-ADAccount -Identity $selectedUser.SamAccountName
-            # Обновляем состояние пользователя в массиве
-            $userToUpdate = $users | Where-Object { $_.SamAccountName -eq $selectedUser.SamAccountName }
-            $userToUpdate.Enabled = $false
-            #[System.Windows.Forms.MessageBox]::Show("Учетная запись $($selectedUser.Name) отключена.", "Успех")
+
+        # Задаем вопрос пользователю
+        $dialogResult = [System.Windows.Forms.MessageBox]::Show(
+            "Вы уверены, что хотите $(if ($selectedUser.Enabled) { 'ОТКЛЮЧИТЬ' } else { 'ВКЛЮЧИТЬ' }) учетную запись:`n $($selectedUser.Name) ?",
+            "Подтверждение", 
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+
+        # Если пользователь выбрал "Да"
+        if ($dialogResult -eq [System.Windows.Forms.DialogResult]::Yes) {
+
+            Write-Host "`n-------------------------------------------------------------`n"
+
+            if ($selectedUser.Enabled) {
+                Disable-ADAccount -Identity $selectedUser.SamAccountName
+                # Обновляем состояние пользователя в массиве
+                $userToUpdate = $users | Where-Object { $_.SamAccountName -eq $selectedUser.SamAccountName }
+                #$userToUpdate.Enabled = $false
+                Write-host "Учетная запись $($selectedUser.Name) отключена"
+            } else {
+                Enable-ADAccount -Identity $selectedUser.SamAccountName
+                # Обновляем состояние пользователя в массиве
+                $userToUpdate = $users | Where-Object { $_.SamAccountName -eq $selectedUser.SamAccountName }
+                #$userToUpdate.Enabled = $true
+                Write-host "Учетная запись $($selectedUser.Name) включена"
+            }
+
+            # Работа с базой PassWork
+            Write-Host "`nPasswork - Перемещение учетки:"
+
+            $passwork = [Passwork]::new($passwork_address)
+            $auth = $passwork.login($passwork_token)
+
+            if ($auth) {
+                $vault = $passwork.searchVault($passwork_vault)
+    
+                if ($vault) {
+                    Write-Host "Запрос: $($selectedUser.SamAccountName) $($selectedUser.Name)"
+        
+                    $response = $passwork.searchPassword(@{
+                        query   = "$($selectedUser.SamAccountName) $($selectedUser.Name)"
+                        vaultId = $vault.id
+                    })
+
+                    if ($response.Count -ge 1) {
+                        # Поиск нужного пользователя
+                        $result = $response | Where-Object {
+                            $_.name -eq "$($selectedUser.Name)" -and $_.login -eq "$($selectedUser.SamAccountName)"
+                        }
+
+                        if ($result) {
+                            # Поиск папки "Уволенные"
+                            $folders = $passwork.searchFolder(@{
+                                query   = "$passwork_disfold"
+                                vaultId = $vault.id
+                            })
+                
+                            $disfold = $folders | Where-Object { $_.name -eq "$($passwork_disfold)" }
+
+                            if ($disfold) {
+                                $passd = $passwork.getPassword($result.id)
+
+                                if ($passd -and $passd.id) {
+                                    $userPassword = $passwork.ConvertFromBase64($passd.cryptedPassword)
+                        
+                                    # Создание тела для перемещения пароля
+                                    $body = @{
+                                        folderTo = $disfold.id
+                                        vaultTo  = $vault.id
+                                    }
+                                    #Если отключаем переносим в $disfold.id если включаем переносим в корень сейфа
+                                    if ($selectedUser.Enabled) { $body.folderTo = $disfold.id } else { $body.folderTo = 0 }
+
+                                    # Добавление параметров (cryptedPassword, custom, attachments) в тело запроса
+                                    foreach ($param in @('cryptedPassword', 'custom', 'attachments')) {
+                                        if ($passd.$param -and $passd.$param -ne "") {
+                                            $body[$param] = $passd.$param
+                                        }
+                                    }
+
+                                    # Перемещение учетки и изменение дополнительных параметров
+                                    $passwork.movePassword($result.id, $body)
+                                    
+                                    $bodyedit = @{
+                                        tags  = @("$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)")
+                                    }
+                                    
+                                    #Если отключаем - цвет серый (12), если включаем - цвет зеленый (4)
+                                    if ($selectedUser.Enabled) { $bodyedit.color = 12 } else { $bodyedit.color = 4 }
+                                    
+                                    $passwork.editPassword($result.id, $bodyedit)
+                                }
+                            } else {
+                                Write-Host "Папка не найдена"
+                            }
+                        }
+                    }
+                }
+                $passwork.logout()
+            } else {
+                Write-Host "Ошибка авторизации в Passwork"
+            }
+
+
+            Update-UserList
         } else {
-            Enable-ADAccount -Identity $selectedUser.SamAccountName
-            # Обновляем состояние пользователя в массиве
-            $userToUpdate = $users | Where-Object { $_.SamAccountName -eq $selectedUser.SamAccountName }
-            $userToUpdate.Enabled = $true
-            #[System.Windows.Forms.MessageBox]::Show("Учетная запись $($selectedUser.Name) включена.", "Успех")
+            Write-Host "Действие отменено пользователем"
         }
-        Update-UserList
     }
 })
 $contextMenu.Items.Add($toggleAccountMenuItem) | Out-Null
@@ -523,16 +745,14 @@ $toggleInfoMenuItem.Add_Click({
 
         $userPassword = "(нет данных)"
 
-        #Сбор информации из базы PassWork
+        #Работа с базой PassWork
         Write-Host "`n-------------------------------------------------------------`n"
         Write-Host "Passwork - Сбор информации:"
 
-        . "${PSScriptRoot}\passwork_lib.ps1"
-        #$passwork = [Passwork]::new("https://passwork.bavaria-group.ru/api/v4")
-        $passwork = [Passwork]::new("http://172.20.0.253/api/v4")
-        $auth = $passwork.login("9mEubTheqzrgLUpAAUGTiqViNDkuVfT7APjPKefgxPoGkbICGARFHo6UbJk6")
+        $passwork = [Passwork]::new($passwork_address)
+        $auth = $passwork.login($passwork_token)
         if ($auth){
-            $vault = $passwork.searchVault("AD")
+            $vault = $passwork.searchVault($passwork_vault)
                 if ($vault -ne $null){
                     Write-Host "Запрос: $($selectedUser.SamAccountName) $($selectedUser.Name)"
                     $response = $passwork.searchPassword(
@@ -544,23 +764,31 @@ $toggleInfoMenuItem.Add_Click({
                     if ($response.Count -ge 1) {
                         # Поиск нужного словаря
                         $result = $response | Where-Object { 
-                            $_.name -eq "$($selectedUser.Name)" -and $_.login -like "*$($selectedUser.SamAccountName)*"
+                            $_.name -eq "$($selectedUser.Name)" -and $_.login -like "$($selectedUser.SamAccountName)*"
                         }
                         if ($result) {
                             $passd = $passwork.getPassword($result.id)
                             if ($passd -and $passd.cryptedPassword) {
-                                $userPassword = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($passd.cryptedPassword))
+                                $userPassword = $passwork.ConvertFromBase64($passd.cryptedPassword)
                             }
 
                         }
+
                     }
                 }
             $passwork.logout()
         }
+
+        # Получение списка групп, в которых состоит пользователь
+        $groups = Get-ADUser -Identity $selectedUser.SamAccountName -Properties MemberOf | Select-Object -ExpandProperty MemberOf
+
+        # Преобразуем группы в удобочитаемый формат
+        $groupNames = $groups | ForEach-Object { (Get-ADGroup -Identity $_).Name }
+
         #Сохранить в буфер обмена
         Set-Clipboard -Value "Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль:  $userPassword"
-        [System.Windows.Forms.MessageBox]::Show("Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль: $userPassword", "Информация о пользователе", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
 
+        [System.Windows.Forms.MessageBox]::Show("Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль: $userPassword`n`nСписок группы пользователя: `n$($groupNames -join "`n")", "Информация о пользователе", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
 
         Update-UserList
     }
