@@ -1,4 +1,4 @@
-﻿clear
+clear
 $upn = "@bavaria-group.ru"
 
 #- Passwork - настройки --------------------------------------------------------------------------
@@ -156,20 +156,37 @@ $changePasswordMenuItem.Add_Click({
                                     query = "$($selectedUser.SamAccountName) $($selectedUser.Name)"
                                     vaultId = $vault.id
                             })
-
                             if ($response.Count -ge 1) {
                                 # Поиск нужного словаря
                                 $result = $response | Where-Object { 
                                     $_.name -eq "$($selectedUser.Name)" -and $_.login -eq "$($selectedUser.SamAccountName)"
                                 }
                                 if ($result) {
-                                     $passwork.editPassword($result.id,
+                                    Write-Host "Обновление учетки"
+                                    $passwork.editPassword($result.id,
                                         @{
                                             cryptedPassword = "$newPassword"
                                             tags = @("$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)")
                                     })   
                                 }
-
+                            } else {
+                                Write-Host "Создание новой учетки"
+                                $passwork.AddPassword(
+                                @{
+                                    vaultId = $vault.id 
+                                    name = "$($selectedUser.Name)"
+                                    login = "$($selectedUser.SamAccountName)"
+                                    cryptedPassword = "$newPassword"
+                                    custom = @(
+                                        @{
+                                            name  = "Почта"
+                                            value = "$($selectedUser.SamAccountName)$upn"
+                                            type  = "text"
+                                        }
+                                    )
+                                    color = 4 
+                                    tags = @("$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)")
+                                })   
                             }
                         }
                     $passwork.logout()
@@ -251,6 +268,7 @@ $renameMenuItem.Add_Click({
                                     $_.name -eq "$($selectedUser.Name)" -and $_.login -eq "$($selectedUser.SamAccountName)"
                                 }
                                 if ($result) {
+                                     Write-Host "Обновление учетки"
                                      $passwork.editPassword($result.id,
                                         @{
                                             login = "$newLogin"
@@ -265,6 +283,24 @@ $renameMenuItem.Add_Click({
                                     })   
                                 }
 
+                            } else {
+                                Write-Host "Создание новой учетки"
+                                $passwork.AddPassword(
+                                @{
+                                    vaultId = $vault.id 
+                                    name = "$($selectedUser.Name)"
+                                    login = "$newLogin"
+                                    #cryptedPassword = ""
+                                    custom = @(
+                                        @{
+                                            name  = "Почта"
+                                            value = "$newLogin$upn"
+                                            type  = "text"
+                                        }
+                                    )
+                                    color = 4 
+                                    tags = @("$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)")
+                                })   
                             }
                         }
                     $passwork.logout()
@@ -366,6 +402,7 @@ $renameMenuItem.Add_Click({
                                 }
 
                                 if ($result) {
+                                     Write-Host "Обновление учетки"
                                      $passwork.editPassword($result.id,
                                         @{
                                             name = "$newName"
@@ -373,6 +410,23 @@ $renameMenuItem.Add_Click({
                                     })   
                                 }
 
+                            } else {
+                                Write-Host "Создание новой учетки"
+                                $passwork.AddPassword(
+                                @{
+                                    vaultId = $vault.id 
+                                    name = "$newName"
+                                    login = "$($selectedUser.SamAccountName)"
+                                    custom = @(
+                                        @{
+                                            name  = "Почта"
+                                            value = "$($selectedUser.SamAccountName)$upn"
+                                            type  = "text"
+                                        }
+                                    )
+                                    color = 4 
+                                    tags = @("$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)")
+                                }) 
                             }
                         }
                     $passwork.logout()
@@ -758,7 +812,7 @@ $toggleInfoMenuItem.Add_Click({
                     $response = $passwork.searchPassword(
                         @{
                             query = "$($selectedUser.SamAccountName) $($selectedUser.Name)"
-                            #vaultId = $vault.id
+                            vaultId = $vault.id
                     })
 
                     if ($response.Count -ge 1) {
@@ -780,15 +834,24 @@ $toggleInfoMenuItem.Add_Click({
         }
 
         # Получение списка групп, в которых состоит пользователь
-        $groups = Get-ADUser -Identity $selectedUser.SamAccountName -Properties MemberOf | Select-Object -ExpandProperty MemberOf
+        $userDetails = Get-ADUser -Identity $selectedUser.SamAccountName -Properties MemberOf, uid
 
+        $groups = $userDetails.MemberOf
         # Преобразуем группы в удобочитаемый формат
         $groupNames = $groups | ForEach-Object { (Get-ADGroup -Identity $_).Name }
+
+        $profileuid = $userDetails.uid
+        # Проверка наличия пути к папке профиля
+        if ($profileuid) {
+            $profileuidText = "`n`nПапка на старом >> $profileuid"
+        } else {
+            $profileuidText = ""
+        }
 
         #Сохранить в буфер обмена
         Set-Clipboard -Value "Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль:  $userPassword"
 
-        [System.Windows.Forms.MessageBox]::Show("Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль: $userPassword`n`nСписок группы пользователя: `n$($groupNames -join "`n")", "Информация о пользователе", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
+        [System.Windows.Forms.MessageBox]::Show("Пользователь: $($selectedUser.Name)`nЛогин: $($selectedUser.SamAccountName)$upn`nПароль: $userPassword`n`nСписок группы пользователя: `n$($groupNames -join "`n")$profileuidText", "Информация о пользователе", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information)
 
         Update-UserList
     }
